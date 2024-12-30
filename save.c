@@ -1,12 +1,12 @@
 #include "save.h"
 
-int file_lines(char *filename) {
+size_t file_lines(const char *filename) {
     FILE *input = fopen(filename, "r");
     if (!input)
         exit(EXIT_FAILURE);
     char *line = NULL;
     size_t len = 0;
-    int counter = 0;
+    size_t counter = 0;
     while (getline(&line, &len, input) != EOF) {
         counter++;
     }
@@ -17,12 +17,23 @@ int file_lines(char *filename) {
     return counter;
 }
 
-int file_size(char *filename) {
+size_t file_size(const char *filename) {
     FILE *input = fopen(filename, "r");
     if (!input)
         exit(EXIT_FAILURE);
-    fseek(input, 0, SEEK_END); 
-    int size = ftell(input);
+    size_t size = 0;
+    char previous, current;
+    previous = fgetc(input);
+    while ((current = fgetc(input)) != EOF) {
+        if (current=='\n')
+            current = ' ';
+        if (previous==' ' && current==' ') {
+            continue;
+        } else {
+            size++;
+            previous = current;
+        }
+    }
     fclose(input);
     if (input != NULL) {
         printf("File not properly closed...\n");
@@ -30,18 +41,22 @@ int file_size(char *filename) {
     return size;
 }
 
-void get_save_name(char *filename, char *svName) {
-    size_t fnLen = strlen(filename);
+void get_save_name(const char *filename, char *svName, int mode) {
     strncpy(svName, filename, SAVE_NAME_MAX_SIZE-SAVE_EXTENSION_SIZE);
-    strncat(svName, SAVE_EXTENSION, SAVE_EXTENSION_SIZE);
+    if (mode == SCRIPT_MODE) {
+        strncat(svName, SCRIPT_SAVE_EXTENSION, SAVE_EXTENSION_SIZE);
+    } else if (mode == TEXT_MODE) {
+        strncat(svName, TEXT_SAVE_EXTENSION, SAVE_EXTENSION_SIZE);
+    }
 }
 
-void load_file_script(char *filename, char **text) {
+void load_file_script(const char *filename, char **text) {
     FILE *input = fopen(filename, "r");
     if (!input)
         exit(EXIT_FAILURE);
     char *line = NULL;
     size_t len = 0;
+    // text will be modified and the pointer will remains at the start
     char **textLine = text;
     while (getline(&line, &len, input) != EOF) {
         // -1 to guarentee the line ends with '\0'
@@ -51,18 +66,20 @@ void load_file_script(char *filename, char **text) {
     fclose(input);
 }
 
-void load_file_text(char *filename, char *text) {
+void load_file_text(const char *filename, char *text) {
     FILE *input = fopen(filename, "r");
     if (!input)
         exit(EXIT_FAILURE);
+    // we don't want to change the text pointer
     char *buffer = text;                                                           
     // add a char first to avoid getting outside the text in the while loop
-    int current = fgetc(input);
+    char current = fgetc(input);
     *buffer = current;
+    buffer++;
     while ((current = fgetc(input)) != EOF) {
         if (current == '\n') {
             current = ' ';
-        }
+        } // skip when several spaces appear
         if (*(buffer-1) == ' ' && current == ' ') {
             continue;
         }
@@ -72,28 +89,28 @@ void load_file_text(char *filename, char *text) {
     fclose(input);
 }
 
-bool check_save_integrity(char *filename) {
+bool check_save_integrity(const char *filename, int mode) {
     char svName[SAVE_NAME_MAX_SIZE] = {0};
-    get_save_name(filename, svName);
+    get_save_name(filename, svName, mode);
     FILE *sv = fopen(svName, "rb");
     if (!sv) {
         return false;
     }
     fseek(sv, 0, SEEK_END);
-    int svSize = ftell(sv);
+    size_t svSize = ftell(sv);
     fclose(sv);
     return svSize == SAVE_BYTES;
 }
 
-void load_save(char* filename, SaveData *save) {
-    if (!check_save_integrity(filename)) {
-        delete_save(filename); // in case of corrupted file
+void load_save(const char *filename, SaveData *save, int mode) {
+    if (!check_save_integrity(filename, mode)) {
+        delete_save(filename, mode); // in case of corrupted file
         save->currLine = 0;
         save->currPos = 0;
-        memset(save->score, 0, SCORE_INTERVAL);
+        memset(save->score, 0, sizeof(int)*SCORE_INTERVAL);
     } else {
         char svName[SAVE_NAME_MAX_SIZE] = {0};
-        get_save_name(filename, svName);
+        get_save_name(filename, svName, mode);
         FILE *svFile = fopen(svName, "rb");
         if (!svFile) {
             perror("An error occured when loading the save file");
@@ -104,16 +121,16 @@ void load_save(char* filename, SaveData *save) {
     }
 }
 
-void save(char *filename, SaveData *save) {
+void save(const char *filename, const SaveData *save, int mode) {
     char svName[SAVE_NAME_MAX_SIZE] = {0};
-    get_save_name(filename, svName);
+    get_save_name(filename, svName, mode);
     FILE *svFile = fopen(svName, "wb");
     fwrite(save, sizeof(SaveData), 1, svFile);
     fclose(svFile);
 }
 
-void delete_save(char *filename) {
+void delete_save(const char *filename, int mode) {
     char svName[SAVE_NAME_MAX_SIZE] = {0};
-    get_save_name(filename, svName);
+    get_save_name(filename, svName, mode);
     remove(svName);
 }
